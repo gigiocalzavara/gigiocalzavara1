@@ -535,7 +535,7 @@ function calc(){
   let proj=null;
   if(p.target&&p.goal==='emagrecer'&&p.target<p.weight){const perWeek=(tdee-meta)*7/7700+kcalTreino*p.days/7700;proj={weeks:Math.ceil((p.weight-p.target)/Math.max(.2,perWeek)),perWeek}}
   if(p.target&&p.goal==='hipertrofia'&&p.target>p.weight){proj={weeks:Math.ceil((p.target-p.weight)/.25),perWeek:.25}}
-  return{imc,imcCls,tmb,tdee,meta,prot:g.prot*p.weight,agua:35*p.weight,fcmax,z:[Math.round(fcmax*g.zone[0]),Math.round(fcmax*g.zone[1])],kcalTreino,proj};
+  return{imc,imcCls,tmb,tdee,meta,prot:g.prot*p.weight,agua:35*p.weight,fcmax,rest:healthRest(),z:healthRest()?[Math.round(healthRest()+(fcmax-healthRest())*g.zone[0]),Math.round(healthRest()+(fcmax-healthRest())*g.zone[1])]:[Math.round(fcmax*g.zone[0]),Math.round(fcmax*g.zone[1])],kcalTreino,proj};
 }
 function sessionMinutes(){const p=S.profile,g=GOALS[p.goal],pl=plan()[0];let m=5+g.cardio;
   for(const id of pl.ex){const pr=presc(id);m+=pr.sets*((pr.secs||40)+pr.rest)/60+1}return Math.round(m)}
@@ -599,8 +599,12 @@ const ACH=[
   {id:'explorador',n:'Explorador',d:'Faça 15 exercícios diferentes',i:'compass',c:'var(--green)',ok:()=>new Set(S.history.flatMap(h=>h.sets.map(s=>s.ex))).size>=15},
   {id:'lv5',n:'Nível 5',d:'Alcance o nível 5',i:'star',c:'var(--blue)',ok:()=>levelInfo().l>=5},
   {id:'lv10',n:'Nível 10',d:'Alcance o nível 10',i:'crown',c:'var(--orange)',ok:()=>levelInfo().l>=10},
+  {id:'conectado',n:'Conectado',d:'Importe dados do Samsung Health',i:'heart',c:'var(--blue)',ok:()=>!!S.health},
+  {id:'passos10k',n:'Dez mil passos',d:'Um dia com 10.000 passos ou mais',i:'bolt',c:'var(--green)',ok:()=>!!S.health&&Object.values(S.health.days).some(d=>(d.steps||0)>=10000)},
+  {id:'sono',n:'Bem descansado',d:'7 noites com 7 h de sono ou mais',i:'moon',c:'var(--blue)',ok:()=>!!S.health&&Object.values(S.health.days).filter(d=>(d.sleep||0)>=7).length>=7},
 ];
 const MPOOL=[
+  {id:'passos',n:'Some 50.000 passos',xp:80,goal:50000,health:1,val:(h,wk)=>S.health?Object.entries(S.health.days).filter(([d])=>weekKey(new Date(d+'T12:00'))===wk).reduce((s,[,v])=>s+(v.steps||0),0):0,u:''},
   {id:'cardio30',n:'Faça 30 min de cardio',xp:60,goal:30,val:h=>h.reduce((s,x)=>s+(x.cardio||0),0),u:'min'},
   {id:'pr',n:'Bata 1 recorde pessoal',xp:80,goal:1,val:h=>h.reduce((s,x)=>s+(x.prs||[]).length,0),u:''},
   {id:'completo',n:'Complete todas as séries de um treino',xp:60,goal:1,val:h=>h.filter(x=>x.complete).length,u:''},
@@ -611,7 +615,7 @@ const MPOOL=[
 ];
 function missions(){
   const k=weekKey();if(!S.missions[k]){let seed=[...k].reduce((a,c)=>a*31+c.charCodeAt(0),7)>>>0;
-    const pool=[...MPOOL],pick=[];while(pick.length<2){seed=(seed*1103515245+12345)>>>0;pick.push(pool.splice(seed%pool.length,1)[0].id)}
+    const pool=MPOOL.filter(m=>!m.health||S.health),pick=[];while(pick.length<2){seed=(seed*1103515245+12345)>>>0;pick.push(pool.splice(seed%pool.length,1)[0].id)}
     S.missions[k]={ids:['meta',...pick],claimed:{}}}
   const hs=S.history.filter(h=>wk(h)===k),m=S.missions[k];
   return m.ids.map(id=>{if(id==='meta')return{id,n:`Treine ${S.profile.days}x nesta semana`,xp:120,goal:S.profile.days,v:hs.length,u:'',claimed:!!m.claimed[id]};
@@ -719,6 +723,7 @@ function viewHome(){
     <div style="margin-top:6px">${ms.map(m=>`<div class="mission ${m.v>=m.goal?'done':''}"><span>${esc(m.n)}<br><small class="muted num">${fmt(Math.min(m.v,m.goal))}${m.u?' '+m.u:''} / ${fmt(m.goal)}${m.u?' '+m.u:''}</small></span><span class="xp">${m.claimed?'✓ ':'+'}${m.xp} XP</span><div class="bar"><i style="width:${Math.min(100,m.v/m.goal*100)}%"></i></div></div>`).join('')}</div>
   </section>
   ${recent.length?`<section class="card"><div class="row between"><h2>Últimas conquistas</h2><button class="linkbtn" data-go="progresso">Ver todas</button></div><div class="badges" style="margin-top:10px">${recent.map(badge).join('')}</div></section>`:''}
+  ${healthHomeCard()}
   <section class="card"><p class="eyebrow">Dica do dia</p><p style="margin-top:6px">${tip}</p></section>`;
 }
 document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g){route=g.dataset.go;render();scrollTo(0,0)}
@@ -885,6 +890,7 @@ function viewProg(){
   <section class="card"><h2>Treinos por semana</h2><p class="muted" style="font-size:.85rem">Laranja = meta de ${S.profile.days} batida</p>
    <svg class="chart" viewBox="0 0 330 130" role="img" aria-label="Treinos nas últimas 8 semanas"><line class="gl" x1="20" x2="320" y1="110" y2="110"/><line x1="20" x2="320" y1="${gy}" y2="${gy}" stroke="var(--accent)" stroke-dasharray="4 3"/><text x="16" y="${gy+3}" text-anchor="end">${S.profile.days}</text>${bars}</svg></section>
   <section class="card"><h2>Calendário</h2><p class="muted" style="font-size:.85rem;margin-bottom:8px">Últimas 12 semanas (cada coluna é uma semana, de segunda a domingo)</p><div class="heat">${heat}</div></section>
+  ${healthProgCard()}
   <section class="card stack"><div><h2>Peso corporal</h2><p class="muted" style="font-size:.85rem">Pese-se sempre no mesmo horário, de preferência de manhã.</p></div>${weightChart()}
    <form id="wf" class="row"><input class="inp num" id="wkg" type="number" inputmode="decimal" step="0.1" min="30" max="250" placeholder="Peso de hoje (kg)" aria-label="Peso de hoje em kg"><button class="btn primary" type="submit">Registrar</button></form></section>
   <section class="card"><h2>Recordes pessoais</h2><div class="prlist" style="margin-top:8px">${Object.keys(S.prs).length?Object.entries(S.prs).map(([id,r])=>`<div class="r"><span>${esc(EX[id].n)}</span><b class="num">${EX[id].load?r.w+' kg × '+r.r:r.r+(EX[id].type==='hold'?' s':' reps')}</b></div>`).join(''):'<p class="muted">Seus recordes aparecem aqui depois do primeiro treino.</p>'}</div></section>
@@ -919,7 +925,7 @@ function viewPerfil(){
    <div class="kv"><span>Meta de calorias</span><b class="num" style="color:var(--accent)">${fmt(c.meta)} kcal</b><small>${g.kcal<0?'Déficit moderado de ~400 kcal para perder gordura sem perder músculo.':g.kcal>0?`Superávit leve de ~${g.kcal} kcal para construir músculo com pouco ganho de gordura.`:'Manutenção: comer o quanto gasta.'}</small></div>
    <div class="kv"><span>Proteína por dia</span><b class="num">${fmt(c.prot)} g</b><small>${g.prot} g por kg de peso corporal.</small></div>
    <div class="kv"><span>Água por dia</span><b class="num">${fmt(c.agua/1000,1)} L</b><small>35 ml por kg, mais nos dias de treino.</small></div>
-   <div class="kv"><span>Zona do cardio</span><b class="num">${c.z[0]}–${c.z[1]} bpm</b><small>${Math.round(g.zone[0]*100)}–${Math.round(g.zone[1]*100)}% da frequência máxima estimada (${Math.round(c.fcmax)} bpm). As esteiras mostram o batimento quando você segura nos sensores.</small></div>
+   <div class="kv"><span>Zona do cardio</span><b class="num">${c.z[0]}–${c.z[1]} bpm</b><small>${c.rest?`Fórmula de Karvonen com sua FC de repouso do Samsung Health (${c.rest} bpm): ${Math.round(g.zone[0]*100)}–${Math.round(g.zone[1]*100)}% da reserva cardíaca. FC máxima estimada: ${Math.round(c.fcmax)} bpm.`:`${Math.round(g.zone[0]*100)}–${Math.round(g.zone[1]*100)}% da frequência máxima estimada (${Math.round(c.fcmax)} bpm).`} As esteiras mostram o batimento quando você segura nos sensores.</small></div>
    <div class="kv"><span>Gasto por treino</span><b class="num">~${fmt(c.kcalTreino)} kcal</b><small>Estimativa para ~${sessionMinutes()} min de musculação + cardio.</small></div>
    ${c.proj?`<div class="kv"><span>Previsão até ${fmt(p.target,1)} kg</span><b class="num">~${c.proj.weeks} semanas</b><small>Ritmo de ~${fmt(c.proj.perWeek,2)} kg por semana seguindo a meta de calorias e o plano. É uma estimativa: o corpo não muda em linha reta.</small></div>`:''}
   </section>
@@ -927,17 +933,144 @@ function viewPerfil(){
    <div class="chips">${plan().map(d=>`<span class="tag">${esc(d.n)}</span>`).join('')}</div>
    <p class="note" style="margin-top:10px">Progressão automática: quando você completa todas as séries no máximo de repetições, o app sugere subir para o próximo halter ou placa.</p>
    <button class="btn" id="edit" style="margin-top:12px;width:100%">Editar perfil e objetivo</button></section>
+  ${healthPerfilCard()}
   <section class="card stack"><div class="row between"><h2>Seus dados</h2><span class="tag">${sync==='nuvem'?'Salvo na sua conta':'Salvo neste aparelho'}</span></div>
    <p class="muted" style="font-size:.9rem">${sync==='nuvem'?'Seu progresso fica guardado na sua conta Claude e aparece em qualquer aparelho em que você abrir o app.':'Seu progresso fica guardado neste navegador. Faça um backup de vez em quando.'}</p>
    <div class="row wrap"><button class="btn sm" id="exp">Copiar backup</button><button class="btn sm" id="imp">Restaurar backup</button><button class="btn sm ghost" id="reset">Apagar tudo</button></div>
    <div id="bk"></div></section>`;
-  $('#edit').onclick=()=>{editing=true;ob=null;render();scrollTo(0,0)};
+  $('#edit').onclick=()=>{editing=true;ob=null;render();scrollTo(0,0)};bindHealthPerfil();
   $('#exp').onclick=()=>{const t=JSON.stringify(S);$('#bk').innerHTML=`<textarea class="inp" id="bkt" readonly aria-label="Backup">${esc(t)}</textarea>`;
     navigator.clipboard?.writeText(t).then(()=>toast('Backup copiado.'),()=>{$('#bkt').select();toast('Selecione e copie o texto.')})};
   $('#imp').onclick=()=>{$('#bk').innerHTML=`<textarea class="inp" id="bkin" placeholder="Cole aqui o texto do backup" aria-label="Texto do backup"></textarea><button class="btn primary sm" id="bkgo" style="margin-top:8px">Restaurar</button>`;
     $('#bkgo').onclick=()=>{try{const d=JSON.parse($('#bkin').value);if(!d.profile)throw 0;S=Object.assign(blank(),d);save();render();toast('Backup restaurado.')}catch(e){toast('Esse texto não é um backup válido.')}}};
   $('#reset').onclick=()=>{const close=openSheet(`<button class="x" data-close aria-label="Fechar">×</button><h2>Apagar todo o progresso?</h2><p class="muted" style="margin:8px 0 16px">Perfil, histórico, XP e conquistas serão apagados. Não dá para desfazer.</p><div class="row"><button class="btn" data-close style="flex:1">Cancelar</button><button class="btn primary" id="really" style="flex:1">Apagar</button></div>`);
     $('#really').onclick=()=>{S=blank();save();close();route='home';render()}};
+}
+
+/* ============================================================
+   SAÚDE · Samsung Health (opcional)
+   Páginas web não acessam o Samsung Health diretamente. O app lê os
+   arquivos de "Baixar dados pessoais" do Samsung Health (CSV ou .zip),
+   guarda só os resumos diários e usa nos cálculos e na gamificação.
+============================================================ */
+const EXTYPES={1001:'Caminhada',1002:'Corrida',11007:'Ciclismo',13001:'Trilha',14001:'Natação',15006:'Elíptico',10007:'Musculação',1000:'Treino',0:'Exercício'};
+function splitCSV(l){const out=[];let cur='',q=false;for(let i=0;i<l.length;i++){const ch=l[i];
+  if(q){if(ch==='"'){if(l[i+1]==='"'){cur+='"';i++}else q=false}else cur+=ch}
+  else if(ch==='"')q=true;else if(ch===','){out.push(cur);cur=''}else cur+=ch}out.push(cur);return out}
+function parseCSV(text){const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);if(lines.length<2)return[];
+  const hi=/start_time|day_time|create_time|update_time/.test(lines[0])?0:1;
+  const head=splitCSV(lines[hi]).map(h=>h.trim().split('.').pop());
+  return lines.slice(hi+1).map(l=>{const c=splitCSV(l),o={};head.forEach((h,i)=>{if(o[h]===undefined||o[h]==='')o[h]=c[i]});return o})}
+function kindOf(name,text){const s=(name+' '+text.slice(0,200)).toLowerCase();
+  if(/step_daily_trend/.test(s))return'steptrend';if(/pedometer_day_summary/.test(s))return'stepday';
+  if(/sleep_stage|sleep_combined|sleep_snoring|sleep_goal/.test(s))return null;
+  if(/(health|shealth)\.step_count/.test(s))return'steps';if(/tracker\.heart_rate|health\.heart_rate/.test(s))return'hr';
+  if(/health\.weight/.test(s))return'weight';if(/shealth\.sleep[.,]/.test(s)||/health\.sleep[.,]/.test(s))return'sleep';
+  if(/shealth\.exercise[.,]/.test(s)&&!/exercise\.(weather|recovery|routine|custom|periodization|max_heart)/.test(s))return'exercise';return null}
+function localDay(t,off){if(!t)return null;let ms;
+  if(/^\d{10,}$/.test(t))ms=+t;else{ms=Date.parse(t.trim().replace(' ','T')+(/[zZ]|[+-]\d\d:?\d\d$/.test(t)?'':'Z'));if(isNaN(ms))return null;
+    const m=/UTC([+-])(\d\d)(\d\d)/.exec(off||'');if(m)ms+=(m[1]==='-'?-1:1)*(+m[2]*60+ +m[3])*6e4;else ms-=new Date().getTimezoneOffset()*6e4}
+  return new Date(ms).toISOString().slice(0,10)}
+const msOf=t=>/^\d{10,}$/.test(t||'')?+t:Date.parse(String(t).trim().replace(' ','T')+'Z');
+async function readHealthFiles(files){
+  const texts=[];
+  for(const f of files){
+    if(/\.zip$/i.test(f.name)){await loadJSZip();const z=await JSZip.loadAsync(f);
+      for(const n of Object.keys(z.files))if(/\.csv$/i.test(n)&&!z.files[n].dir)texts.push([n,await z.files[n].async('string')])}
+    else if(/\.csv$/i.test(f.name))texts.push([f.webkitRelativePath||f.name,await f.text()])}
+  const D={},stepsRaw={},hr={},ex=[],wts={};let used=0;
+  const day=k=>D[k]=D[k]||{};
+  for(const[name,text]of texts){const kind=kindOf(name,text);if(!kind)continue;const rows=parseCSV(text);if(!rows.length)continue;used++;
+    for(const r of rows){
+      if(kind==='steptrend'){if(r.source_type!==undefined&&r.source_type!==''&&r.source_type!=='-2')continue;const d=localDay(r.day_time);if(!d)continue;const o=day(d);o.steps=Math.max(o.steps||0,+r.count||0);if(r.distance)o.dist=Math.max(o.dist||0,+r.distance);if(r.calorie)o.kcal=Math.max(o.kcal||0,+r.calorie)}
+      else if(kind==='stepday'){const d=localDay(r.day_time||r.create_time,r.time_offset);if(!d)continue;const o=day(d);o.steps=Math.max(o.steps||0,+r.step_count||0);if(r.distance)o.dist=Math.max(o.dist||0,+r.distance);if(r.calorie)o.kcal=Math.max(o.kcal||0,+r.calorie)}
+      else if(kind==='steps'){const d=localDay(r.start_time,r.time_offset);if(d)stepsRaw[d]=(stepsRaw[d]||0)+(+r.count||0)}
+      else if(kind==='hr'){const d=localDay(r.start_time,r.time_offset),v=+r.heart_rate;if(d&&v>25&&v<230)(hr[d]=hr[d]||[]).push(v)}
+      else if(kind==='weight'){const d=localDay(r.start_time||r.create_time,r.time_offset),v=+r.weight;if(d&&v>25&&v<300)wts[d]=v}
+      else if(kind==='sleep'){const a=msOf(r.start_time),b=msOf(r.end_time),d=localDay(r.end_time,r.time_offset);if(d&&b>a&&b-a<20*36e5)day(d).sleep=+(((day(d).sleep||0)+(b-a)/36e5)).toFixed(2)}
+      else if(kind==='exercise'){const d=localDay(r.start_time,r.time_offset),min=Math.round((+r.duration||0)/6e4);if(d&&min>0)ex.push({date:d,type:EXTYPES[r.exercise_type]||'Exercício',min,kcal:Math.round(+r.calorie||0),hr:Math.round(+r.mean_heart_rate||0)})}
+    }}
+  for(const d in stepsRaw){const o=day(d);if(!o.steps)o.steps=Math.round(stepsRaw[d])}
+  for(const d in hr){const v=hr[d].sort((a,b)=>a-b),o=day(d);o.hrRest=v[Math.floor(v.length*.1)];o.hrAvg=Math.round(v.reduce((s,x)=>s+x,0)/v.length);o.hrMax=v[v.length-1]}
+  return{days:D,ex,wts,used,files:texts.length};
+}
+let jszipP=null;
+function loadJSZip(){if(window.JSZip)return Promise.resolve();return jszipP=jszipP||new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=ok;s.onerror=()=>no(new Error('zip'));document.head.appendChild(s)})}
+function mergeHealth(res){
+  const H=S.health=S.health||{days:{},ex:[],goal:8000,awarded:{}};
+  for(const d in res.days)H.days[d]=Object.assign(H.days[d]||{},res.days[d]);
+  const keys=Object.keys(H.days).sort();for(const k of keys.slice(0,Math.max(0,keys.length-120)))delete H.days[k];
+  const seen=new Set(H.ex.map(e=>e.date+e.type+e.min));for(const e of res.ex)if(!seen.has(e.date+e.type+e.min))H.ex.push(e);
+  H.ex.sort((a,b)=>a.date.localeCompare(b.date));H.ex=H.ex.slice(-40);
+  let nw=0;for(const d in res.wts){if(!S.weights.find(w=>w.date===d)){S.weights.push({date:d,kg:res.wts[d]});nw++}}
+  S.weights.sort((a,b)=>a.date.localeCompare(b.date));if(nw&&S.profile)S.profile.weight=S.weights[S.weights.length-1].kg;
+  H.updated=Date.now();
+  // XP: 15 por dia em que bateu a meta de passos (últimos 30 dias, uma vez por dia)
+  let xp=0,n=0;const lim=todayISO(new Date(Date.now()-30*DAY));
+  for(const d in H.days)if(d>=lim&&(H.days[d].steps||0)>=H.goal&&!H.awarded[d]){H.awarded[d]=1;xp+=15;n++}
+  S.xp+=xp;return{xp,n,nw};
+}
+const hDays=()=>S.health?Object.keys(S.health.days).sort():[];
+function healthRest(){if(!S.health)return null;const v=hDays().slice(-14).map(d=>S.health.days[d].hrRest).filter(Boolean);if(!v.length)return null;v.sort((a,b)=>a-b);return v[Math.floor(v.length/2)]}
+function healthLatest(f){const ks=hDays();for(let i=ks.length-1;i>=0;i--){const v=S.health.days[ks[i]][f];if(v)return[ks[i],v]}return null}
+const dm=d=>`${d.slice(8,10)}/${d.slice(5,7)}`;
+const ageDays=()=>S.health?Math.floor((Date.now()-S.health.updated)/DAY):0;
+
+function healthHomeCard(){if(!S.health)return'';const H=S.health,st=healthLatest('steps'),sl=healthLatest('sleep'),rest=healthRest();
+  const pct=st?Math.min(100,st[1]/H.goal*100):0;
+  const tip=sl&&sl[1]<6?'Você dormiu pouco. Hoje vale um treino mais leve: mantenha as cargas e descanse um pouco mais entre as séries.':st&&st[1]>=H.goal?'Meta de passos batida nesse dia. Ótimo para o coração!':'';
+  return`<section class="card stack"><div class="row between"><h2>Saúde</h2><span class="tag">Samsung Health</span></div>
+   ${st?`<div><div class="row between"><span>Passos em ${dm(st[0])}</span><b class="num" style="font-family:var(--f-display);font-size:1.4rem">${fmt(st[1])}<small class="muted" style="font-size:.85rem"> / ${fmt(H.goal)}</small></b></div><div class="bar"><i style="width:${pct}%"></i></div></div>`:''}
+   <div class="tiles">${sl?`<div class="tile"><div class="v num">${fmt(sl[1],1)}<small>h</small></div><div class="k">sono em ${dm(sl[0])}</div></div>`:''}${rest?`<div class="tile"><div class="v num">${rest}<small>bpm</small></div><div class="k">FC de repouso (estimada)</div></div>`:''}</div>
+   ${tip?`<p class="note">${tip}</p>`:''}
+   ${ageDays()>=3?`<p class="note">Dados de ${ageDays()} dias atrás. <button class="linkbtn" data-go="perfil">Atualizar</button></p>`:''}</section>`}
+
+function healthProgCard(){if(!S.health)return'';const H=S.health,ks=[];for(let i=13;i>=0;i--)ks.push(todayISO(new Date(Date.now()-i*DAY)));
+  const vals=ks.map(d=>(H.days[d]||{}).steps||0),mx=Math.max(H.goal*1.2,...vals),bw=290/14,Y=v=>110-v/mx*95;
+  const bars=ks.map((d,i)=>{const v=vals[i],y=Y(v);return`<rect x="${30+i*bw+3}" y="${y}" width="${bw-6}" height="${110-y}" rx="2" fill="${v>=H.goal?'var(--accent)':'var(--metal)'}"/>${i%2?'':`<text x="${30+i*bw+bw/2}" y="124" text-anchor="middle">${dm(d)}</text>`}`}).join('');
+  const sleeps=ks.map(d=>(H.days[d]||{}).sleep).filter(Boolean),avgS=sleeps.length?sleeps.reduce((a,b)=>a+b,0)/sleeps.length:null;
+  const ex=H.ex.slice(-5).reverse();
+  return`<section class="card stack"><div><h2>Passos · 14 dias</h2><p class="muted" style="font-size:.85rem">Do Samsung Health. Laranja = meta de ${fmt(H.goal)} batida (+15 XP por dia)</p></div>
+  <svg class="chart" viewBox="0 0 330 130" role="img" aria-label="Passos nos últimos 14 dias"><line class="gl" x1="30" x2="320" y1="110" y2="110"/><line x1="30" x2="320" y1="${Y(H.goal)}" y2="${Y(H.goal)}" stroke="var(--accent)" stroke-dasharray="4 3"/><text x="26" y="${Y(H.goal)+3}" text-anchor="end">${fmt(H.goal/1000)}k</text>${bars}</svg>
+  ${avgS?`<div class="row between"><span>Sono médio</span><b class="num">${fmt(avgS,1)} h por noite</b></div>`:''}
+  ${healthRest()?`<div class="row between"><span>FC de repouso</span><b class="num">${healthRest()} bpm</b></div>`:''}
+  ${ex.length?`<div><p class="eyebrow">Atividades do relógio/celular</p><div class="prlist">${ex.map(e=>`<div class="r"><span>${esc(e.type)}<br><small class="muted">${dm(e.date)}${e.hr?' · FC média '+e.hr:''}</small></span><b class="num">${e.min} min${e.kcal?' · '+e.kcal+' kcal':''}</b></div>`).join('')}</div></div>`:''}</section>`}
+
+function healthPerfilCard(){const H=S.health;
+  if(!H)return`<section class="card stack"><div class="row between"><h2>Samsung Health</h2><span class="tag">Opcional</span></div>
+   <p class="muted" style="font-size:.95rem">Traga passos, batimentos, sono, peso e atividades do seu celular ou relógio Samsung. O app usa isso para ajustar a zona do cardio, dar XP pelos passos e avisar quando você dormiu pouco.</p>
+   <button class="btn primary" id="h-connect">Conectar Samsung Health</button></section>`;
+  const ks=hDays();
+  return`<section class="card stack"><div class="row between"><h2>Samsung Health</h2><span class="tag" style="color:var(--good)">Conectado</span></div>
+   <p class="muted" style="font-size:.9rem">${ks.length} dias de dados (${ks.length?dm(ks[0])+' a '+dm(ks[ks.length-1]):'—'}). Última importação há ${ageDays()===0?'menos de 1 dia':ageDays()+' dia(s)'}.</p>
+   <div class="field"><span>Meta de passos por dia</span><div class="chips" id="h-goal">${[6000,8000,10000,12000].map(g=>`<button class="chip" data-g="${g}" aria-pressed="${H.goal===g}">${fmt(g)}</button>`).join('')}</div></div>
+   <div class="row wrap"><button class="btn primary sm" id="h-connect">Atualizar dados</button><button class="btn sm ghost" id="h-off">Desconectar</button></div></section>`}
+function bindHealthPerfil(){
+  $('#h-connect')&&($('#h-connect').onclick=openHealthImport);
+  $('#h-goal')&&($('#h-goal').onclick=e=>{const b=e.target.closest('[data-g]');if(!b)return;S.health.goal=+b.dataset.g;save();render()});
+  $('#h-off')&&($('#h-off').onclick=()=>{const close=openSheet(`<button class="x" data-close aria-label="Fechar">×</button><h2>Desconectar o Samsung Health?</h2><p class="muted" style="margin:8px 0 16px">Os dados de saúde importados serão apagados do app. Pesos já registrados e XP ganho continuam.</p><div class="row"><button class="btn" data-close style="flex:1">Cancelar</button><button class="btn primary" id="really" style="flex:1">Desconectar</button></div>`);
+    $('#really').onclick=()=>{delete S.health;save();close();render()}});
+}
+function openHealthImport(){
+  openSheet(`<button class="x" data-close aria-label="Fechar">×</button>
+  <p class="eyebrow">Samsung Health · opcional</p><h2 style="font-size:1.8rem">Importar seus dados</h2>
+  <p class="muted" style="margin-top:6px">A Samsung não permite que apps web leiam o Samsung Health diretamente. Por isso você exporta os dados no celular e escolhe os arquivos aqui. Leva 1 minuto e pode repetir quando quiser atualizar.</p>
+  <div class="sec"><h3>No celular</h3><ol class="steps">
+   <li>Abra o <b>Samsung Health</b> e toque no menu (☰ ou ⋮) e depois em <b>Configurações</b>.</li>
+   <li>Toque em <b>Baixar dados pessoais</b> e confirme. Pode pedir a senha da conta Samsung.</li>
+   <li>Os arquivos vão para a pasta <b>Download › Samsung Health</b> do celular.</li>
+   <li>Toque no botão abaixo e selecione <b>todos os arquivos .csv</b> dessa pasta (ou um .zip dela).</li></ol></div>
+  <label class="btn primary big" style="margin-top:16px" for="h-file">Escolher arquivos</label>
+  <input id="h-file" type="file" multiple accept=".csv,.zip,text/csv,application/zip" hidden>
+  <p class="note" id="h-status" style="margin-top:10px">O app lê passos, batimentos, sono, peso e exercícios e guarda só um resumo por dia. Nada é enviado para outros serviços.</p>`);
+  $('#h-file').onchange=async e=>{const files=[...e.target.files];if(!files.length)return;const st=$('#h-status');st.textContent='Lendo '+files.length+' arquivo(s)...';
+    try{const res=await readHealthFiles(files);
+      if(!res.used){st.textContent='Não encontrei dados do Samsung Health nesses arquivos. Selecione os arquivos .csv da pasta Download › Samsung Health (nomes começam com com.samsung).';return}
+      const first=!S.health,r=mergeHealth(res);const mis=claimAll(),ach=checkAch();save();
+      $('#layer').innerHTML='';route=first?'home':route;render();scrollTo(0,0);
+      toast(`Importado: ${Object.keys(res.days).length} dias${r.nw?', '+r.nw+' pesos':''}${r.xp?' · +'+r.xp+' XP pelos passos':''}`,4000);
+      if(ach.length||mis.length)confetti();
+    }catch(err){st.textContent=err&&err.message==='zip'?'Não consegui abrir o .zip. Selecione os arquivos .csv diretamente.':'Não consegui ler esses arquivos. Tente selecionar os .csv da pasta Download › Samsung Health.'}};
 }
 
 render();

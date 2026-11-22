@@ -12,6 +12,21 @@ App de treino com gamificação, feito para a academia do prédio (rack de halte
 - **Modo treino**: registro de séries, cronômetro de descanso em LED com aviso sonoro e combo de séries seguidas.
 - **Gamificação**: XP e níveis com títulos, sequência de semanas batendo a meta (+10% de XP por semana), missões semanais, 19 conquistas, recordes pessoais, gráficos e calendário.
 
+## Samsung Health (opcional)
+
+Apps web não têm acesso direto ao Samsung Health (a Samsung só libera os dados para apps Android nativos). Por isso o app importa a exportação oficial:
+
+1. Samsung Health › menu › Configurações › **Baixar dados pessoais**.
+2. No app, Perfil › **Conectar Samsung Health** › escolha os arquivos `.csv` da pasta `Download/Samsung Health` (ou um `.zip` dela).
+
+O app lê passos, batimentos, sono, peso e exercícios, guarda só um resumo por dia e usa isso para:
+- calcular a zona do cardio pela fórmula de Karvonen, com a sua FC de repouso real;
+- dar +15 XP por dia em que você bate a meta de passos, além de uma missão semanal de passos e 3 conquistas novas;
+- sugerir um treino mais leve quando você dormiu pouco;
+- mostrar gráficos de passos e sono, e as atividades feitas com o relógio ou o celular.
+
+Para importar de novo e atualizar, basta repetir os passos.
+
 ## Arquivos
 
 - `src/app.html`: código-fonte do app (página publicada como Artifact).
