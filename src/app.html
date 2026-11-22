@@ -952,6 +952,7 @@ function viewPerfil(){
    arquivos de "Baixar dados pessoais" do Samsung Health (CSV ou .zip),
    guarda só os resumos diários e usa nos cálculos e na gamificação.
 ============================================================ */
+const HC=window.AndroidHealth||null;
 const EXTYPES={1001:'Caminhada',1002:'Corrida',11007:'Ciclismo',13001:'Trilha',14001:'Natação',15006:'Elíptico',10007:'Musculação',1000:'Treino',0:'Exercício'};
 function splitCSV(l){const out=[];let cur='',q=false;for(let i=0;i<l.length;i++){const ch=l[i];
   if(q){if(ch==='"'){if(l[i+1]==='"'){cur+='"';i++}else q=false}else cur+=ch}
@@ -1038,14 +1039,15 @@ function healthProgCard(){if(!S.health)return'';const H=S.health,ks=[];for(let i
 function healthPerfilCard(){const H=S.health;
   if(!H)return`<section class="card stack"><div class="row between"><h2>Samsung Health</h2><span class="tag">Opcional</span></div>
    <p class="muted" style="font-size:.95rem">Traga passos, batimentos, sono, peso e atividades do seu celular ou relógio Samsung. O app usa isso para ajustar a zona do cardio, dar XP pelos passos e avisar quando você dormiu pouco.</p>
-   <button class="btn primary" id="h-connect">Conectar Samsung Health</button></section>`;
+   ${HC?`<p class="note">No app instalado, os dados chegam pelo Health Connect e são atualizados sozinhos toda vez que você abre o app.</p><button class="btn primary" id="h-native">Conectar Samsung Health</button><button class="linkbtn" id="h-connect" style="font-size:.9rem">Prefiro importar arquivos</button>`:`<button class="btn primary" id="h-connect">Conectar Samsung Health</button>`}</section>`;
   const ks=hDays();
   return`<section class="card stack"><div class="row between"><h2>Samsung Health</h2><span class="tag" style="color:var(--good)">Conectado</span></div>
-   <p class="muted" style="font-size:.9rem">${ks.length} dias de dados (${ks.length?dm(ks[0])+' a '+dm(ks[ks.length-1]):'—'}). Última importação há ${ageDays()===0?'menos de 1 dia':ageDays()+' dia(s)'}.</p>
+   <p class="muted" style="font-size:.9rem">${ks.length} dias de dados (${ks.length?dm(ks[0])+' a '+dm(ks[ks.length-1]):'—'}). ${H.native&&HC?'Sincroniza sozinho pelo Health Connect sempre que você abre o app. Última':'Última importação'} há ${ageDays()===0?'menos de 1 dia':ageDays()+' dia(s)'}.</p>
    <div class="field"><span>Meta de passos por dia</span><div class="chips" id="h-goal">${[6000,8000,10000,12000].map(g=>`<button class="chip" data-g="${g}" aria-pressed="${H.goal===g}">${fmt(g)}</button>`).join('')}</div></div>
-   <div class="row wrap"><button class="btn primary sm" id="h-connect">Atualizar dados</button><button class="btn sm ghost" id="h-off">Desconectar</button></div></section>`}
+   <div class="row wrap">${HC?`<button class="btn primary sm" id="h-native">Sincronizar agora</button>`:`<button class="btn primary sm" id="h-connect">Atualizar dados</button>`}<button class="btn sm ghost" id="h-off">Desconectar</button></div></section>`}
 function bindHealthPerfil(){
   $('#h-connect')&&($('#h-connect').onclick=openHealthImport);
+  $('#h-native')&&($('#h-native').onclick=()=>nativeSync(true,false));
   $('#h-goal')&&($('#h-goal').onclick=e=>{const b=e.target.closest('[data-g]');if(!b)return;S.health.goal=+b.dataset.g;save();render()});
   $('#h-off')&&($('#h-off').onclick=()=>{const close=openSheet(`<button class="x" data-close aria-label="Fechar">×</button><h2>Desconectar o Samsung Health?</h2><p class="muted" style="margin:8px 0 16px">Os dados de saúde importados serão apagados do app. Pesos já registrados e XP ganho continuam.</p><div class="row"><button class="btn" data-close style="flex:1">Cancelar</button><button class="btn primary" id="really" style="flex:1">Desconectar</button></div>`);
     $('#really').onclick=()=>{delete S.health;save();close();render()}});
@@ -1071,6 +1073,37 @@ function openHealthImport(){
       if(ach.length||mis.length)confetti();
     }catch(err){st.textContent=err&&err.message==='zip'?'Não consegui abrir o .zip. Selecione os arquivos .csv diretamente.':'Não consegui ler esses arquivos. Tente selecionar os .csv da pasta Download › Samsung Health.'}};
 }
+
+/* ---- App Android: leitura automática pelo Health Connect ----
+   O APK injeta window.AndroidHealth. O Samsung Health envia os dados ao
+   Health Connect; o app lê os últimos 60 dias ao abrir. */
+const hcWait={};
+window.__hc=(id,json)=>{const f=hcWait[id];delete hcWait[id];if(f){try{f(JSON.parse(json))}catch(e){f({error:'parse'})}}};
+function hcCall(ask){return new Promise(res=>{const id='c'+Date.now()+Math.floor(Math.random()*1e6);hcWait[id]=res;try{HC.sync(id,!!ask)}catch(e){delete hcWait[id];res({error:'bridge'})}})}
+let hcBusy=false;
+async function nativeSync(ask,quiet){
+  if(!HC||hcBusy)return;let st='unavailable';try{st=HC.status()}catch(e){}
+  if(st!=='ok'){if(!quiet)hcProblem(st);return}
+  hcBusy=true;if(!quiet)toast('Buscando dados no Health Connect...');
+  const r=await hcCall(ask);hcBusy=false;
+  if(r.error){if(!quiet){if(r.error==='denied'||r.error==='noperm')hcProblem('perm');else toast('Não consegui ler o Health Connect agora. Tente de novo.')}return}
+  if(!r.used){if(!quiet)hcProblem('empty');return}
+  const m=mergeHealth(r);S.health.native=1;const mis=claimAll(),ach=checkAch();save();render();
+  if(!quiet||m.xp||ach.length)toast(`Samsung Health sincronizado${m.xp?' · +'+m.xp+' XP pelos passos':''}`);
+  if(ach.length||mis.length)confetti();
+}
+function hcProblem(kind){
+  const msg={update:['Atualize o Health Connect','O Health Connect precisa ser atualizado para o app ler seus dados.',true],
+    unavailable:['Instale o Health Connect','O Samsung Health entrega os dados para outros apps pelo Health Connect, do Google. Em celulares com Android 14 ou mais novo ele já vem instalado; nos outros, instale pela Play Store.',true],
+    perm:['Permissão necessária','Sem permissão o app não consegue ler seus dados. Toque em Sincronizar agora e marque as permissões, ou libere em Configurações › Health Connect › Permissões do app › Treino do Prédio.',false],
+    empty:['Nenhum dado encontrado','O Health Connect ainda não tem dados do Samsung Health. No Samsung Health, abra o menu › Configurações › Health Connect e permita que ele compartilhe passos, batimentos, sono, peso e exercícios. Depois volte aqui e sincronize.',false]}[kind]||['Health Connect indisponível','Não consegui acessar o Health Connect neste celular.',false];
+  openSheet(`<button class="x" data-close aria-label="Fechar">×</button><h2>${msg[0]}</h2><p class="muted" style="margin:8px 0 16px">${msg[1]}</p>${msg[2]?`<button class="btn primary big" id="hc-store">Abrir Play Store</button>`:`<button class="btn primary big" data-close>Entendi</button>`}`);
+  $('#hc-store')&&($('#hc-store').onclick=()=>{try{HC.openStore()}catch(e){}});
+}
+let hcLast=0;
+function hcAuto(){if(HC&&S.health&&S.health.native&&Date.now()-hcLast>10*6e4){hcLast=Date.now();nativeSync(false,true)}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')hcAuto()});
+setTimeout(hcAuto,800);
 
 render();
 </script>

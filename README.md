@@ -12,6 +12,17 @@ App de treino com gamificação, feito para a academia do prédio (rack de halte
 - **Modo treino**: registro de séries, cronômetro de descanso em LED com aviso sonoro e combo de séries seguidas.
 - **Gamificação**: XP e níveis com títulos, sequência de semanas batendo a meta (+10% de XP por semana), missões semanais, 22 conquistas, recordes pessoais, gráficos e calendário.
 
+## App Android (APK)
+
+O APK é compilado automaticamente pelo GitHub Actions a cada envio para `main` e publicado em **Releases** (`TreinoDoPredio.apk`).
+
+1. No celular Android, abra a página de Releases do repositório e baixe `TreinoDoPredio.apk`.
+2. Toque no arquivo e permita a instalação de apps do navegador quando o Android pedir.
+3. No Samsung Health: menu › Configurações › **Health Connect** › permita compartilhar passos, batimentos, sono, peso e exercícios.
+4. No app: Perfil › **Conectar Samsung Health** e aceite as permissões. A partir daí os dados são sincronizados sozinhos toda vez que você abre o app.
+
+Código em `android/` (Kotlin + WebView + Health Connect). Atualizações instalam por cima da versão anterior sem perder o progresso.
+
 ## Samsung Health (opcional)
 
 Apps web não têm acesso direto ao Samsung Health (a Samsung só libera os dados para apps Android nativos). Por isso o app importa a exportação oficial:
