@@ -10,7 +10,7 @@ App de treino com gamificação, feito para a academia do prédio (rack de halte
 - **Carga sugerida e progressão**: sugere a carga inicial e, quando você completa todas as séries no máximo de repetições, sugere subir o peso.
 - **26 exercícios animados** com passo a passo, dicas e erros comuns. O músculo que mais trabalha aparece em laranja.
 - **Modo treino**: registro de séries, cronômetro de descanso em LED com aviso sonoro e combo de séries seguidas.
-- **Gamificação**: XP e níveis com títulos, sequência de semanas batendo a meta (+10% de XP por semana), missões semanais, 19 conquistas, recordes pessoais, gráficos e calendário.
+- **Gamificação**: XP e níveis com títulos, sequência de semanas batendo a meta (+10% de XP por semana), missões semanais, 22 conquistas, recordes pessoais, gráficos e calendário.
 
 ## Samsung Health (opcional)
 
